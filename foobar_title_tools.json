@@ -1,0 +1,16 @@
+{
+  "copy_format": "%album artist%/['['$left(%date%,4)']' ]%album%/$if($greater(%totaldiscs%,1), %discnumber%)%tracknumber%-%title%",
+  "path_format": "%album artist% - %date% - %album% (%%)/%tracknumber% - %title%",
+  "audio_extensions": [
+    ".ape",
+    ".flac",
+    ".mp3",
+    ".m4a",
+    ".wav",
+    ".wv",
+    ".aiff",
+    ".ogg",
+    ".opus"
+  ],
+  "extra": "*.jpg"
+}

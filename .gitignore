@@ -1,0 +1,8 @@
+.env
+__pycache__/
+*.m3u8
+*.bak
+*.log
+missing.txt
+best-180-albums 3_with_genres.txt
+

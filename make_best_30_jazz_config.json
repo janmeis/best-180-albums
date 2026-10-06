@@ -1,0 +1,24 @@
+{
+  "urls": [
+    "https://bestofjazz.org/category/reviews/2022-reviews/"
+  ],
+  "collection": "M:/",
+  "site_outputs": {
+    "jazztrail.net": {
+      "playlist_pattern": "best-30-jazz-albums-{year}.m3u8",
+      "missing": "missing.txt"
+    },
+    "bestofjazz.org": {
+      "playlist_pattern": "bestofjazz-{year}.m3u8",
+      "missing": "missing.txt"
+    }
+  },
+  "artist_overrides": {
+    "Isaiah Collier / William Parker / William Hooker - The Ancients": "The Ancients",
+    "Craig Taborn / Nels Cline / Marcus Gilmore - Trio of Bloom": "Trio of Bloom",
+    "A. Cyrille / W. Parker / E. Rava - 2 Blues for Cecil": "Andrew Cyrille, William Parker & Enrico Rava",
+    "Avishai Cohen - Big Vicious": "Avishai Cohen (TP)",
+    "Rob Mazurek's Exploding Star Orchestra - Dimensional Stardust": "Rob Mazurek Exploding Star Orchestra",
+    "Abdullah Ibrahim - The Balance": "Abdullah Ibrahim (Dollar Brand)"
+  }
+}

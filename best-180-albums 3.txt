@@ -1,0 +1,200 @@
+1	Markus Reuter / Tim Motzer / Kenny Grohowski	Bleed	2022
+2	Peter Evans	Extra	2024
+3	Flock	Flock	2020
+4	Three-Layer Cake	Sounds the Color of Grounds	2025
+5	Pochakaite Malko	Laya	2004
+6	Fulguromatic	Fulguromatic	2022
+7	Niechęć	Unsubscribe	2017
+8	ØKSE	ØKSE	2023
+9	Hedvig Mollestad Trio	Ding Dong. You\'re Dead.	2021
+10	London Brew	London Brew	2023
+11	John Patitucci	Spirit Fall	2025
+12	Rude Skøtt Osborn Trio	The Virtue of Temperance	2022
+13	In Love With	Axel Erotic	2016
+14	Alfie Ryner	II	2012
+15	Koma Saxo	Koma Saxo	2019
+16	Petter Eldh	Projekt Drums	2022
+17	Jim Black	Reckon	2022
+18	Monika Roscher Bigband	Witchy Activities and the Maple Death	2023
+19	Anna Högberg Attack	Lena	2020
+20	Maria Faust	MOnuMENT	2021
+21	Jaimie Branch	Fly or Die Live	2021
+22	Mendoza Hoff Revels	Echolocation	2023
+23	Juçara Marçal	Delta Estácio Blues	2021
+24	Mats Gustafsson / Fire!	Defeat	2019
+25	Atom String Quartet	Places	2020
+26	Ava Mendoza / Gabby Fluke-Mogul / Carolina Pérez	Mama Killa	2025
+27	Filip Żółtowski Quartet	BiBi	2024
+28	Nu Jazz	Un Jazz	2026
+29	Ches Smith	Laugh Ash	2019
+30	Tim Berne's Snakeoil	The Fantastic Mrs. 10	2021
+31	David Torn / Tim Berne / Ches Smith	Sun Of Goldfinger	2019
+32	Samo Šalamon	Duality	2011
+33	Big Satan	Souls Saved Hear	2004
+34	Marc Ducret	Tower-Bridge	2014
+35	Liudas Mockūnas / Marc Ducret	Silent Vociferation	2015
+36	Samuel Blaser / Marc Ducret	Boundless	2010
+37	Ches Smith	Path of Seven Colors	2021
+38	Matt Mitchell	Fiction	2015
+39	Michael Formanek	The Rub and Spare Change	2010
+40	Michael Formanek / Tim Berne / Ches Smith	The Distance	2016
+41	Tom Rainey	Pool School	2010
+42	Mary Halvorson	Cloudward	2024
+43	Ingrid Laubrock & Tom Rainey	Brink	2024
+44	Kris Davis	Diatom Ribbons	2019
+45	James Brandon Lewis	Eye and I	2023
+46	Larry Ochs / Nels Cline / Gerald Cleaver	What Is to Be Done	2019
+47	Darius Jones	fLuXkit Vancouver (i̶t̶s̶ suite but sacred)	2023
+48	Tyshawn Sorey	Alloy	2014
+49	Craig Taborn	Shadow Plays	2021
+50	Gordon Grdina & Jim Black	Martian Kitties	2021
+51	Elliott Sharp	Octal Book	2012
+52	John Zorn	Asmodeus: Book of Angels Volume 7	2007
+53	Masada Chamber Ensembles	Bar Kokhba	1996
+54	Taylor Ho Bynum	Enter the Plustet	2010
+55	Ralph Alessi	Cognitive Dissonance	2010
+56	Fire! Orchestra	Echoes	2023
+57	Gard Nilssen Acoustic Unity	Great Intentions	2025
+58	Cortex (SWE)	Live at Le Périscope	2023
+59	Fire!	Defeat	2021
+60	Melt Trio	Stroy	2015
+61	Kit Downes, Petter Eldh, James Maddren	Vermillion	2022
+62	Punkt.Vrt.Plastik	Proportion	2023
+63	Kjetil Møster	Dust Breathing	2020
+64	Ingebrigt Håker Flaten	(Exit)Knarr	2020
+65	Peter Brötzmann & Paal Nilssen-Love	Chicken Shit Bingo	2024
+66	Lina Allemano	Vegetables	2021
+67	The End (SWE)	Why Do You Mourn	2023
+68	Mette Rasmussen & Chris Corsano	All the Ghosts at Once	2015
+69	John Dikeman / Sun-Mi Hong / Aaron Lumley / Marta Warelis	Old Adam on Turtle Island	2025
+70	Aka Moon	Amazir	2018
+71	Stéphane Galland	Lobi	2012
+72	Magic Malik Orchestra	00-237 XP-1	2005
+73	Médéric Collignon & Le Jus de Bocse	Shangri-Tunkashi-La	2010
+74	Guillaume Perret	Open Me	2014
+75	Vincent Courtois / Sylvie Courvoisier / Ellery Eskelin	As Soon As Possible	2008
+76	Benoît Delbecq	Circles and Calligrams	2011
+77	Octurn	21.emanations	2006
+78	The Comet Is Coming	Hyper-Dimensional Expansion Beam	2022
+79	Binker and Moses	Feeding the Machine	2022
+80	Yussef Dayes	Black Classical Music	2023
+81	Yussef Kamaal	Black Focus	2016
+82	Sons of Kemet	Black to the Future	2021
+83	Ill Considered	Liminal Space	2023
+84	EABS	Repetitions (Letters to Krzysztof Komeda)	2017
+85	Cykada	Metamorphosis	2023
+86	Sarathy Korwar	KALAK	2019
+87	Moses Boyd	Dark Matter	2020
+88	Donny McCaslin	I Want More	2023
+89	Chris Potter	Got the Keys to the Kingdom	2024
+90	Dave Douglas	Freak In	2018
+91	Tigran Hamasyan	The Call Within	2020
+92	Shabaka	Perceive Its Beauty, Acknowledge Its Grace	2024
+93	Dhafer Youssef	Shiraz	2025
+94	Melt Yourself Down	Pray for Me I Don't Fit In	2016
+95	Anteloper	Pink Dolphins	2022
+96	Senyawa	Sujud	2021
+97	The Ex & Brass Unbound	Enormous Door	2022
+98	Kneebody	Anti-Hero	2017
+99	Binker Golding	Dream Like a Dogwood Wild Boy	2022
+100	Kokoroko	Could We Be More	2022
+101	Theon Cross	Fyah	2019
+102	Nubya Garcia	Source	2020
+103	Jeff Parker	The Relatives	2012
+104	William Parker / Ava Mendoza / Gerald Cleaver	Mayan Space Station	2021
+105	Luke Stewart Exposure Quintet	Luke Stewart Exposure Quintet	2020
+106	Matana Roberts	Coin Coin Chapter Four: Memphis	2019
+107	Irreversible Entanglements	Open the Gates	2021
+108	Darius Jones	Big Gurl (Smell My Dream)	2011
+109	Rudresh Mahanthappa & Kadri Gopalnath	Kinsmen	2008
+110	Ambrose Akinmusire	Owl Song	2023
+111	Peter Evans & Nate Wooley	High Society	2011
+112	Immanuel Wilkins	The 7th Hand	2022
+113	Lakecia Benjamin	Phoenix	2023
+114	Dawn of Midi	Dysomnia	2015
+115	Makaya McCraven	In the Moment	2015
+116	Koma Saxo	Live Remixes	2021
+117	Petter Eldh	Projekt Drums Vol. 2	2025
+118	Colin Stetson	The love it took to leave you	2024
+119	Moppa Elliott / Mostly Other People Do the Killing	Blue	2014
+120	Teho Teardo & Blixa Bargeld	Nerissimo	2016
+121	Charles Lloyd	Sangam & Friends	2026
+122	Juçara Marçal / Cadu Tenório	Anganga	2015
+123	Metá Metá	MM3	2016
+124	Kiko Dinucci	Rastilho	2020
+125	Cadu Tenório	Lágrima	2022
+126	Gard Nilssen's Supersonic Orchestra	If You Listen Carefully the Music Is Yours	2020
+127	Kjetil Møster	When You Cut Into The Present	2015
+128	Chris Speed	Really Ok	2019
+129	Chris Speed / Oscar Noriega / Trevor Dunn / Jim Black	Endangered Blood	2011
+130	Tony Buck	Environmental Studies	2023
+131	John Hollenbeck	Looking for Consonance	2026
+132	Mark Dresser	Sedimental You	2016
+133	Wadada Leo Smith	Spiritual Dimensions	2009
+134	Henry Threadgill	This Brings Us To	2015
+135	Erik Friedlander	Maldoror	2012
+136	François Houle	Genera	2012
+137	Samuel Blaser	Spring Rain	2018
+138	Liudas Mockūnas, Samuel Blaser & Marc Ducret	Twisted Summer	2026
+139	Arto Lindsay & Paal Nilssen-Love	Scarcity	2014
+140	EABS / Tenderlonious	Reflections of Purple Sun	2021
+141	O.N.E	Well, actually…	2025
+142	Bryan Murray & Jon Lundbom	Beats by Balto! Vol. 2	2021
+143	Marcel Bárta & SOČR	Episodes from the Spinning Ball	2025
+144	Asylon Terra	Blind Man Running	2019
+145	Blast (2)	Drifting	2018
+146	Anne Quillier 6tet	Dusty Shelters	2017
+147	Anne Quillier 6tet	Daybreak	2015
+148	Watchdog	Can of Worms	2018
+149	Watchdog	You're Welcome	2016
+150	Rodrigo Amado	Further Beyond	2025
+151	Rodrigo Amado, Taylor Ho Bynum, John Hébert, Gerald Cleaver	Searching For Adam	2010
+152	Silke Eberhard	Being-A-Ning	2025
+153	Signe Emmeluth, Ingebrigt Håker Flaten, Axel Filip	Hyperboreal Trio	2025
+154	Susana Santos Silva	All the Birds	2019
+155	Kaja Draksler Octet	Out for Stars	2017
+156	Sylvie Courvoisier	Chimaera	2024
+157	Tomeka Reid	3+3	2024
+158	Bex Burch	There is only love and fear	2023
+159	Alabaster dePlume	Come With Fierce Grace	2022
+160	Moor Mother	Black Encyclopedia of the Air	2021
+161	Angel Bat Dawid	The Oracle	2019
+162	Nicole Mitchell	Mandorla Awakening II	2017
+163	Nubya Garcia	Odyssey	2024
+164	Ezra Collective	Dance, No One's Watching	2024
+165	Atomic	Lucidity	2015
+166	GoGo Penguin	Between Two Waves	2023
+167	Jim Black	Better You Don't	2025
+168	Shay Hazan	Wusul	2024
+169	Angel Bat Dawid	LIVE	2020
+170	Kjetil Mulelid Trio	Who Do You Love the Most	2023
+171	Das Kapital	Vive la France!	2019
+172	Lucia Cadotsch	AKI	2023
+173	Dhafer Youssef	Shiraz 	2025
+174	Shabaka and the Ancestors	We Are Sent Here by History	2020
+175	The Comet Is Coming	Trust in the Lifeforce of the Deep Mystery	2019
+176	Binker Golding	Dream Like a Dogwood Wild Boy	2022
+177	Ill Considered	Balm	2025
+178	Ezra Collective	Where I'm Meant to Be	2022
+179	The Bad Plus	Inevitable Western	2022
+180	Tyshawn Sorey	Mesmerism	2022
+181	Peter Evans	Being & Becoming	2020
+182	Peter Evans & Nate Wooley	High Society	2011
+183	Kris Davis	Run the Gauntlet	2022
+184	Ingrid Laubrock	Purposing the Air	2025
+185	Charles Lloyd / Julian Lage / Zakir Hussain	Trios: Sacred Thread	2022
+186	Ava Mendoza	Alive Alone, Alive Together	2026
+187	O.N.E.	Well, actually...	2025
+188	Błoto	Erozje	2020
+189	Ava Mendoza	The Circular Train	2024
+190	David Murray	Francesca	2024
+191	Mary Halvorson Code Girl	Artlessly Falling	2020
+192	Brandon Seabrook	Exultations	2020
+193	Chris Corsano & Bill Orcutt	Made Out of Sound	2021
+194	Mike Reed	The Separatist Party	2023
+195	أحمد [Ahmed]	Play Monk	2026
+196	Sun Ra Arkestra	Living Sky	2022
+197	Jeff Parker ETA IVtet	Forfolks	2021
+198	Ben LaMar Gay	Open Arms to Open Us	2021
+199	Moor Mother	The Great Bailout	2024
+200	Fire! Orchestra	Testament	2024
