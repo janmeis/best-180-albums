@@ -230,6 +230,11 @@ def audio_files(source: Path, extensions: list[str]) -> list[Path]:
     return sorted(paths)
 
 
+JPEG_SUFFIXES = {".jpg", ".jpeg"}
+COVER_STEMS = {"folder", "front", "cover"}
+JPEG_WARNING_BYTES = 1024 * 1024
+
+
 def extra_patterns(value: Any) -> list[str]:
     values = value.split(",") if isinstance(value, str) else value
     if not isinstance(values, list):
@@ -268,8 +273,16 @@ def copy_extras(
     copied_targets: set[Path],
     move: bool,
 ) -> None:
-    for extra in matching_extras(path, source, patterns):
-        target = target_dir / extra.name
+    extras = matching_extras(path, source, patterns)
+    jpgs = [extra for extra in extras if extra.suffix.casefold() in JPEG_SUFFIXES]
+    for extra in extras:
+        name = extra.name
+        if extra.suffix.casefold() in JPEG_SUFFIXES:
+            if len(jpgs) == 1 and extra.stem.casefold() not in COVER_STEMS:
+                name = "folder.jpg"
+            if extra.stat().st_size > JPEG_WARNING_BYTES:
+                print(f"WARNING: image is larger than 1 MB: {extra}", file=sys.stderr)
+        target = target_dir / name
         resolved_target = target.resolve()
         if resolved_target in copied_targets:
             continue
@@ -502,15 +515,20 @@ def main() -> int:
     cp = sub.add_parser("copy", help="copy or move supported audio files into title-formatted folders")
     cp.add_argument("source", type=Path); cp.add_argument("destination", type=Path)
     cp.add_argument("--format", dest="template"); cp.add_argument("--dry-run", action="store_true")
-    cp.add_argument("--move", action="store_true", help="move files and remove the source folder after a complete move")
+    cp_mode = cp.add_mutually_exclusive_group()
+    cp_mode.add_argument("--move", dest="explicit_move", action="store_true", help="move files and remove the source folder after a complete move (default)")
+    cp_mode.add_argument("--copy", action="store_true", help="copy files instead of moving them")
     tag = sub.add_parser("tag", help="copy or move by file tags, or infer tags from paths")
     tag.add_argument("source", type=Path, help="audio file or directory")
     tag.add_argument("destination", type=Path, nargs="?", help="copy files into folders formatted from their tags")
     tag.add_argument("--format", dest="template"); tag.add_argument("--write", action="store_true")
     tag.add_argument("--dry-run", action="store_true")
-    tag.add_argument("--move", action="store_true", help="move files and remove the source folder after a complete move")
+    tag_mode = tag.add_mutually_exclusive_group()
+    tag_mode.add_argument("--move", dest="explicit_move", action="store_true", help="move files and remove the source folder after a complete move (default)")
+    tag_mode.add_argument("--copy", action="store_true", help="copy files instead of moving them")
     args = parser.parse_args()
-    if args.command == "tag" and args.move and args.destination is None:
+    args.move = not args.copy
+    if args.command == "tag" and args.explicit_move and args.destination is None:
         parser.error("tag --move requires a destination")
     try:
         if not args.source.exists():
