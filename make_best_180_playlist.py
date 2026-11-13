@@ -29,7 +29,7 @@ AUDIO_EXTENSIONS = {
     ".wma",
 }
 ALBUM_DIRECTORY = re.compile(
-    r"^\[(?P<year>\d{4})(?:\s*\(\d{4}\))?\]\s*(?P<title>.*)$"
+    r"^\[(?=[^\[\]]+\])(?P<year>\d{4})?[^\[\]]*\]\s*(?P<title>.*)$"
 )
 ENSEMBLE_SUFFIXES = re.compile(
     r"\s+(?:big\s+)?(?:trio|quartet|quintet|sextet|septet|octet|band|orchestra|ensemble|group|collective)$",
@@ -37,6 +37,10 @@ ENSEMBLE_SUFFIXES = re.compile(
 )
 ARTIST_ALIASES = {
     "yussef kamaal": "Yussef Dayes",
+    "galactic supermarket": "The Cosmic Jokers",
+    "a.r. & machines": "Achim Reichel",
+    "a.r": "Achim Reichel",
+    "konrad schnitzler": "Conrad Schnitzler",
 }
 _ARTIST_DIRECTORY_CACHE: dict[str, list[Path]] = {}
 
@@ -164,6 +168,13 @@ def find_artist_directories(collection: Path, artist: str) -> list[Path]:
         if directory.is_dir() and normalize(directory.name) in wanted_artist:
             artist_directories.append(directory)
 
+    artist_directories.extend(
+        directory
+        for directory in top_level_artist_directories(collection)
+        if re.search(r"\s+\([^()]+\)$", directory.name)
+        and normalize(re.sub(r"\s+\([^()]+\)$", "", directory.name)) in wanted_artist
+    )
+
     # Search targeted prefixes even when an exact base artist folder exists,
     # so collaboration folders such as Bill Frisell & Thomas Morgan are found.
     prefixes = {
@@ -288,7 +299,8 @@ def format_album_name(directory_name: str) -> str:
     match = ALBUM_DIRECTORY.match(directory_name)
     if match is None:
         return directory_name
-    return f"{match.group('title')} ({match.group('year')})"
+    year = match.group("year")
+    return f"{match.group('title')} ({year})" if year else match.group("title")
 
 
 def tracks_in(album_directory: Path) -> list[Path]:

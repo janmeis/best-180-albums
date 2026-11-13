@@ -5,4 +5,11 @@ __pycache__/
 *.log
 missing.txt
 best-180-albums 3_with_genres.txt
+krautrocktop100missing.txt
+most_played.db
+most_played.txt
+scrobbler_state.json
+scrobble_most_played.json
+scrobble_most_played.txt
+.vscode/*.*
 
