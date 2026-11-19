@@ -35,10 +35,31 @@ FIELD_ALIASES = {"album artist": ("album artist", "albumartist", "album_artist")
                  "totaltracks": ("totaltracks", "tracktotal", "total tracks"),
                  "totaldiscs": ("totaldiscs", "disctotal", "total discs")}
 INVALID = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+HIGH_SAMPLE_RATE = 48000
+JPEG_SUFFIXES = {".jpg", ".jpeg"}
+COVER_STEMS = {"folder", "front", "cover"}
 
 
 def path_value(value: str) -> str:
     return value.replace("/", "_").replace("\\", "_")
+
+
+def sanitize(text: str) -> str:
+    """Make a formatted path safe for the filesystem, component by component."""
+    return "/".join(INVALID.sub("_", part).rstrip(" .") for part in text.strip(" /\\").replace("\\", "/").split("/"))
+
+
+def verb(dry_run: bool, move: bool, past: bool = False) -> str:
+    if dry_run:
+        return "Would move" if move else "Would copy"
+    return ("Moved" if move else "Copied") if past else ("Move" if move else "Copy")
+
+
+def read_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8-sig")
+    except UnicodeError:
+        return path.read_text(encoding="cp1252")
 
 
 def load_config(path: Path) -> dict[str, Any]:
@@ -178,37 +199,29 @@ def sample_rate_for(path: Path) -> int | None:
     return getattr(getattr(audio, "info", None), "sample_rate", None)
 
 
+def high_sample_rate(path: Path) -> int:
+    """Return the file's sample rate if it is above the supported limit, else 0."""
+    rate = sample_rate_for(path)
+    return rate if rate and rate > HIGH_SAMPLE_RATE else 0
+
+
 def format_sample_rate(sample_rate: int | None) -> str:
     """Format sample rate as a human-readable string with appropriate units."""
     if sample_rate is None:
         return ""
-    if sample_rate >= 1000:
-        return f"[{sample_rate / 1000:.1f}kHz]"
-    return f"[{sample_rate}Hz]"
+    return f"[{sample_rate / 1000:.1f}kHz]" if sample_rate >= 1000 else f"[{sample_rate}Hz]"
 
 
 def cue_for_audio(path: Path) -> Path | None:
-    if path.suffix.casefold() == ".flac":
-        flac_count = sum(1 for sibling in path.parent.glob("*") if sibling.is_file() and sibling.suffix.casefold() == ".flac")
-        if flac_count > 1:
-            return None
-    for cue in path.parent.glob("*.cue"):
-        try:
-            cue_text = cue.read_text(encoding="utf-8-sig")
-        except UnicodeError:
-            cue_text = cue.read_text(encoding="cp1252")
-        if re.search(r"(?im)^\s*FILE\s+\"?" + re.escape(path.name) + r"\"?(?:\s|$)", cue_text):
-            return cue
-    return None
+    if path.suffix.casefold() == ".flac" and sum(1 for s in path.parent.glob("*") if s.is_file() and s.suffix.casefold() == ".flac") > 1:
+        return None
+    pattern = re.compile(r"(?im)^\s*FILE\s+\"?" + re.escape(path.name) + r"\"?(?:\s|$)")
+    return next((cue for cue in path.parent.glob("*.cue") if pattern.search(read_text(cue))), None)
 
 
 def tags_from_cue(cue: Path) -> dict[str, str]:
-    try:
-        cue_text = cue.read_text(encoding="utf-8-sig")
-    except UnicodeError:
-        cue_text = cue.read_text(encoding="cp1252")
     tags: dict[str, str] = {}
-    for line in cue_text.splitlines():
+    for line in read_text(cue).splitlines():
         if re.match(r"(?i)^\s*TRACK\s+\d+", line):
             break
         match = re.match(r'(?i)^\s*(PERFORMER|TITLE)\s+(?:"([^"]*)"|(.*?))\s*$', line)
@@ -224,420 +237,209 @@ def tags_from_cue(cue: Path) -> dict[str, str]:
 
 def audio_files(source: Path, extensions: list[str]) -> list[Path]:
     if source.is_file():
-        return [source]
+        return [source] if source.suffix.casefold() in extensions else []
     paths = []
     for directory, subdirectories, filenames in os.walk(source):
         subdirectories[:] = sorted(name for name in subdirectories if name.casefold() != "#recycle")
-        paths.extend(
-            Path(directory) / filename
-            for filename in filenames
-            if Path(filename).suffix.casefold() in extensions
-        )
+        paths.extend(Path(directory) / name for name in filenames if Path(name).suffix.casefold() in extensions)
     return sorted(paths)
-
-
-JPEG_SUFFIXES = {".jpg", ".jpeg"}
-COVER_STEMS = {"folder", "front", "cover"}
-JPEG_WARNING_BYTES = 1024 * 1024
 
 
 def extra_patterns(value: Any) -> list[str]:
     values = value.split(",") if isinstance(value, str) else value
-    if not isinstance(values, list):
-        raise ValueError("config 'extra' must be a pattern string or list of patterns")
-    patterns = []
-    for item in values:
-        if not isinstance(item, str):
-            raise ValueError("config 'extra' patterns must be strings")
-        patterns.extend(pattern.strip() for pattern in item.split(",") if pattern.strip())
-    return patterns
+    if not isinstance(values, list) or not all(isinstance(item, str) for item in values):
+        raise ValueError("config 'extra' must be a pattern string or a list of pattern strings")
+    return [pattern.strip() for item in values for pattern in item.split(",") if pattern.strip()]
 
 
 def matching_extras(path: Path, source: Path, patterns: list[str]) -> list[Path]:
-    if not patterns:
-        return []
+    """Find extras next to the audio file, climbing towards the source root until some match."""
     root = (source if source.is_dir() else path.parent).resolve()
     current = path.parent.resolve()
-    while current != root:
-        matches = sorted({candidate for pattern in patterns for candidate in current.glob(pattern) if candidate.is_file()})
+    while patterns and current.parent != current:  # never look in a drive root
+        matches = sorted({found for pattern in patterns for found in current.glob(pattern) if found.is_file()})
         if matches:
             return matches
-        if current.parent == current:
-            return []
+        if current == root:
+            break
         current = current.parent
-    if root.parent == root:
-        return []
-    return sorted({candidate for pattern in patterns for candidate in root.glob(pattern) if candidate.is_file()})
+    return []
 
 
-def copy_extras(
-    path: Path,
-    source: Path,
-    target_dir: Path,
-    patterns: list[str],
-    dry_run: bool,
-    copied_targets: set[Path],
-    move: bool,
-    warned_dirs: set[Path] | None = None,
-) -> None:
-    if warned_dirs is None:
-        warned_dirs = set()
-    extras = matching_extras(path, source, patterns)
-    jpgs = [extra for extra in extras if extra.suffix.casefold() in JPEG_SUFFIXES]
-    for extra in extras:
-        name = extra.name
-        if extra.suffix.casefold() in JPEG_SUFFIXES:
-            if len(jpgs) == 1 and extra.stem.casefold() not in COVER_STEMS:
-                name = "folder.jpg"
+def place(src: Path, dst: Path, dry_run: bool, move: bool, label: str = "") -> bool:
+    """Log and perform one move/copy; return False if the destination already exists."""
+    print(f"{verb(dry_run, move)} {label}: {src} -> {dst}")
+    if dry_run:
+        return True
+    if dst.exists():
+        print(f"WARNING: destination already exists, skipping: {dst}", file=sys.stderr)
+        return False
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    (shutil.move if move else shutil.copy2)(src, dst)
+    return True
+
+
+def copy_extras(path: Path, source: Path, target_dir: Path, patterns: list[str], dry_run: bool, done: set[Path], move: bool) -> None:
+    found = matching_extras(path, source, patterns)
+    jpgs = [extra for extra in found if extra.suffix.casefold() in JPEG_SUFFIXES]
+    for extra in found:
+        # A lone JPEG with a non-cover name becomes the folder image.
+        name = "folder.jpg" if len(jpgs) == 1 and extra in jpgs and extra.stem.casefold() not in COVER_STEMS else extra.name
         target = target_dir / name
-        resolved_target = target.resolve()
-        if resolved_target in copied_targets:
+        resolved = target.resolve()
+        if resolved in done:
             continue
-        if extra.resolve() == resolved_target:
-            copied_targets.add(resolved_target)
-            continue
-        action = "move" if move else "copy"
-        print(f"{'Would ' + action if dry_run else action.capitalize()} extra: {extra} -> {target}")
-        if not dry_run:
-            if target.exists():
-                print(f"WARNING: extra already exists, skipping: {target}", file=sys.stderr)
-                copied_targets.add(resolved_target)
-                continue
-            target_dir.mkdir(parents=True, exist_ok=True)
-            if move:
-                shutil.move(str(extra), str(target))
-            else:
-                shutil.copy2(extra, target)
-        copied_targets.add(resolved_target)
+        done.add(resolved)
+        if extra.resolve() != resolved:
+            place(extra, target, dry_run, move, "extra")
 
 
-def copy_files_from_paths(
-    source: Path,
-    destination: Path,
-    path_template: str,
-    copy_template: str,
-    dry_run: bool,
-    extensions: list[str],
-    extras: list[str] | None = None,
-    move: bool = False,
-) -> tuple[int, set[Path], set[Path]]:
-    """Copy files, inferring metadata from folder paths instead of tags.
-
-    Returns:
-        (count, fully_processed_dirs, skipped_dirs) where:
-        - count: number of audio files copied
-        - fully_processed_dirs: set of source directories with all files successfully moved
-        - skipped_dirs: set of source directories skipped due to high sample rate
-    """
-    files = audio_files(source, extensions)
-    copied = 0
-    fully_processed_dirs: set[Path] = set()
-    skipped_dirs: set[Path] = set()
-    warned_dirs: set[Path] = set()
-    copied_extras: set[Path] = set()
-
-    # Group files by their source directory
-    dirs_to_files: dict[Path, list[Path]] = {}
-    for path in files:
-        if path.suffix.casefold() not in extensions:
-            continue
-        dir_key = path.parent.resolve()
-        if dir_key not in dirs_to_files:
-            dirs_to_files[dir_key] = []
-        dirs_to_files[dir_key].append(path)
-
-    # Track target directories for extras processing
-    dir_to_target_dirs: dict[Path, set[Path]] = {}
-
-    # Process each directory
-    for dir_key in sorted(dirs_to_files.keys()):
-        dir_files = dirs_to_files[dir_key]
-
-        # Check sample rate of first file in directory - skip entire directory if >48kHz
-        if dir_files:
-            first_rate = sample_rate_for(dir_files[0])
-            if first_rate and first_rate > 48000:
-                rate_str = format_sample_rate(first_rate)
-                print(f"WARNING: High sample rate {rate_str} ({first_rate:,} Hz > 48,000 Hz) in {dir_key}", file=sys.stderr)
-                print(f"Skipping directory: {dir_key}", file=sys.stderr)
-                skipped_dirs.add(dir_key)
-                continue
-
-        # Process all audio files in this directory
-        dir_success = True
-        dir_to_target_dirs[dir_key] = set()
-
-        for path in sorted(dir_files):
-            # Infer tags from the folder path
-            relative_path = path.relative_to(source) if not source.is_file() else Path(path.name)
-            try:
-                tags = infer(relative_path, path_template)
-            except ValueError as exc:
-                print(f"SKIP: {exc}", file=sys.stderr)
-                dir_success = False
-                continue
-
-            relative = evaluate(copy_template, tags).strip(" /\\")
-            if not relative:
-                print(f"SKIP (empty format): {path}")
-                dir_success = False
-                continue
-
-            relative = "/".join(INVALID.sub("_", part).rstrip(" .") for part in relative.replace("\\", "/").split("/"))
-            target = destination / relative
-            if not target.name.casefold().endswith(path.suffix.casefold()):
-                target = target.with_name(target.name + path.suffix)
-
-            # Log with sample rate
-            sample_rate = sample_rate_for(path)
-            rate_str = format_sample_rate(sample_rate)
-            action = "move" if move else "copy"
-            print(f"{'Would ' + action if dry_run else action.capitalize()} {rate_str}: {path} -> {target}")
-            if not dry_run:
-                target.parent.mkdir(parents=True, exist_ok=True)
-                if target.exists():
-                    print(f"WARNING: destination already exists, skipping: {target}", file=sys.stderr)
-                    # Track target directory even if file exists (for extras)
-                    dir_to_target_dirs[dir_key].add(target.parent.resolve())
-                    continue
-                if move:
-                    shutil.move(str(path), str(target))
-                else:
-                    shutil.copy2(path, target)
-            copied += 1
-            # Track target directory for extras
-            dir_to_target_dirs[dir_key].add(target.parent.resolve())
-
-        # Move extras for this directory after all audio files are moved
-        if dir_success and extras:
-            # Use the first file in directory to find related extras
-            first_file = dir_files[0]
-            for target_dir in sorted(dir_to_target_dirs[dir_key]):
-                copy_extras(first_file, source, target_dir, extras, dry_run, copied_extras, move, warned_dirs)
-            fully_processed_dirs.add(dir_key)
-        elif dir_success:
-            fully_processed_dirs.add(dir_key)
-
-    return copied, fully_processed_dirs, skipped_dirs
-
-
-def copy_files(
+def transfer_files(
     source: Path,
     destination: Path,
     template: str,
     dry_run: bool,
     extensions: list[str],
-    extras: list[str] | None = None,
-    move: bool = False,
+    extras: list[str],
+    move: bool,
+    path_template: str | None = None,
 ) -> tuple[int, set[Path], set[Path]]:
-    """Copy files using tags from audio files.
+    """Copy or move audio files into folders built from ``template``.
 
-    Returns:
-        (count, fully_processed_dirs, skipped_dirs) where:
-        - count: number of audio files copied
-        - fully_processed_dirs: set of source directories with all files successfully moved
-        - skipped_dirs: set of source directories skipped due to high sample rate
+    Tags are read from the files (with CUE sheet support and existing-album checks), or
+    inferred from the file paths when ``path_template`` is given.
+
+    Returns (count, fully_processed_dirs, skipped_dirs): the number of audio files placed,
+    the source directories that were completely handled, and those skipped for a high sample rate.
     """
-    source_directory = None
-    if move and source.is_dir():
-        resolved_source = source.resolve()
-        source_directory = resolved_source
-        if resolved_source == Path(resolved_source.anchor).resolve():
+    from_tags = path_template is None
+    root = source.resolve() if move and source.is_dir() else None
+    if root:
+        if root.parent == root:
             raise ValueError(f"refusing to move and delete a drive or share root: {source}")
-        try:
-            destination.resolve().relative_to(resolved_source)
-        except ValueError:
-            pass
-        else:
+        if destination.resolve().is_relative_to(root):
             raise ValueError(f"refusing to move into the source directory: {destination}")
 
     files = audio_files(source, extensions)
-    first_audio = next((path for path in files if path.suffix.casefold() in extensions), None)
-    first_sample_rate = sample_rate_for(first_audio) if first_audio is not None else None
-    high_sample_rate = first_sample_rate is not None and first_sample_rate > 48000
-    if high_sample_rate:
-        print(f"WARNING: first audio file {first_audio} has sample rate {first_sample_rate:,} Hz, above 48,000 Hz.")
-    if high_sample_rate:
+    if from_tags and files and (rate := high_sample_rate(files[0])):
+        print(f"WARNING: first audio file {files[0]} has sample rate {rate:,} Hz, above {HIGH_SAMPLE_RATE:,} Hz.")
         try:
-            answer = input(f"{'Move' if move else 'Copy'} files anyway? [y/N]: ")
+            answer = input(f"{verb(False, move)} files anyway? [y/N]: ")
         except EOFError:
             answer = ""
         if answer.strip().casefold() not in {"y", "yes"}:
-            action = "move" if move else "copy"
-            print(f"{action.capitalize()} cancelled; no files were {action}d.")
+            print(f"{verb(False, move)} cancelled; no files were {verb(False, move, True).lower()}.")
             return 0, set(), set()
 
-    copied = 0
-    audio_paths = [path for path in files if path.suffix.casefold() in extensions]
-    handled_audio = 0
-    incomplete_move = False
-    copied_extras: set[Path] = set()
-    warned_dirs: set[Path] = set()
-    processed_album_dirs: set[Path] = set()
-    skipped_album_dirs: set[Path] = set()
-    fully_processed_source_dirs: set[Path] = set()
-    skipped_source_dirs: set[Path] = set()
+    by_dir: dict[Path, list[Path]] = {}
+    for path in files:
+        by_dir.setdefault(path.parent.resolve(), []).append(path)
 
-    # Group files by source directory
-    source_dirs_to_files: dict[Path, list[Path]] = {}
-    for path in audio_paths:
-        dir_key = path.parent.resolve()
-        if dir_key not in source_dirs_to_files:
-            source_dirs_to_files[dir_key] = []
-        source_dirs_to_files[dir_key].append(path)
+    count, done_dirs, skipped_dirs = 0, set(), set()
+    placed_extras, checked_albums, existing_albums = set(), set(), set()
 
-    def skip_existing_album(target_dir: Path) -> bool:
-        resolved_dir = target_dir.resolve()
-        if resolved_dir in skipped_album_dirs:
-            return True
-        if resolved_dir in processed_album_dirs:
-            return False
-        processed_album_dirs.add(resolved_dir)
-        if target_dir.is_dir():
-            print(f"WARNING: destination album already exists, skipping: {target_dir}")
-            skipped_album_dirs.add(resolved_dir)
-            return True
-        return False
+    def album_exists(album: Path) -> bool:
+        # Only the first file of an album sees it as pre-existing; later files see the folder we created.
+        album = album.resolve()
+        if album not in checked_albums:
+            checked_albums.add(album)
+            if album.is_dir():
+                print(f"WARNING: destination album already exists, skipping: {album}")
+                existing_albums.add(album)
+        return album in existing_albums
 
-    def target_overlaps_source(target_dir: Path) -> bool:
-        if source_directory is None:
-            return False
-        try:
-            target_dir.resolve().relative_to(source_directory)
-        except ValueError:
-            return False
-        return True
-
-    # Process each source directory
-    for src_dir in sorted(source_dirs_to_files.keys()):
-        dir_files = source_dirs_to_files[src_dir]
-        dir_handled_audio = 0
-        dir_incomplete = False
-
-        # Check sample rate of first file in directory
-        if dir_files:
-            first_rate = sample_rate_for(dir_files[0])
-            if first_rate and first_rate > 48000:
-                rate_str = format_sample_rate(first_rate)
-                print(f"WARNING: High sample rate {rate_str} ({first_rate:,} Hz > 48,000 Hz) in {src_dir}", file=sys.stderr)
-                print(f"Skipping directory: {src_dir}", file=sys.stderr)
-                skipped_source_dirs.add(src_dir)
+    for src_dir, dir_files in sorted(by_dir.items()):
+        if rate := high_sample_rate(dir_files[0]):
+            print(f"WARNING: High sample rate {format_sample_rate(rate)} ({rate:,} Hz > {HIGH_SAMPLE_RATE:,} Hz) in {src_dir}", file=sys.stderr)
+            print(f"Skipping directory: {src_dir}", file=sys.stderr)
+            skipped_dirs.add(src_dir)
+            continue
+        if from_tags:
+            first = sanitize(evaluate(template, tags_for(dir_files[0])))
+            if first and (first_album := (destination / first).parent).is_dir():
+                print(f"WARNING: destination album already exists, skipping: {first_album}", file=sys.stderr)
+                done_dirs.add(src_dir)  # the destination already has this album
                 continue
 
-            # Check if destination for this directory already exists (based on first file's tags)
-            first_file = dir_files[0]
-            first_tags = tags_for(first_file)
-            first_target_path = evaluate(template, first_tags).strip(" /\\")
-            if first_target_path:
-                first_target_path = "/".join(INVALID.sub("_", part).rstrip(" .") for part in first_target_path.replace("\\", "/").split("/"))
-                first_target_dir = (destination / first_target_path).parent  # Get the album folder
-                if first_target_dir.exists() and first_target_dir.is_dir():
-                    print(f"WARNING: destination album already exists, skipping: {first_target_dir}", file=sys.stderr)
-                    # Mark directory as fully processed since destination already has the files
-                    fully_processed_source_dirs.add(src_dir)
-                    continue
-
-        # Process files in this directory
-        target_dirs_for_extras: set[Path] = set()
-        for path in sorted(dir_files):
-            if path.suffix.casefold() == ".cue":
+        incomplete, target_dirs = False, set()
+        for path in dir_files:
+            rate_str = format_sample_rate(sample_rate_for(path))
+            cue = cue_for_audio(path) if from_tags else None
+            try:
+                tags = tags_for(path) if from_tags else infer(path.relative_to(source) if source.is_dir() else Path(path.name), path_template)
+            except ValueError as exc:
+                print(f"SKIP: {exc}", file=sys.stderr)
+                incomplete = True
                 continue
-            if path.suffix.casefold() not in extensions:
-                continue
-
-            tags = tags_for(path)
-            sample_rate = sample_rate_for(path)
-            rate_str = format_sample_rate(sample_rate)
-            cue = cue_for_audio(path)
-            if cue:
+            if cue:  # audio and CUE travel together, in a folder named from the CUE-merged tags
                 for key, value in tags_from_cue(cue).items():
                     tags.setdefault(key, value)
-                folder_template = template.rpartition("/")[0]
-                relative_folder = evaluate(folder_template, tags).strip(" /\\") if folder_template else ""
-                if not relative_folder:
-                    relative_folder = path.parent.name
-                relative_folder = "/".join(INVALID.sub("_", part).rstrip(" .") for part in relative_folder.replace("\\", "/").split("/"))
-                target_dir = destination / relative_folder
-                if skip_existing_album(target_dir):
-                    if move and not target_overlaps_source(target_dir):
-                        dir_handled_audio += 1
-                    else:
-                        dir_incomplete = True
+                album = destination / sanitize(evaluate(template.rpartition("/")[0], tags) or path.parent.name)
+                pairs = [(path, album / path.name, rate_str), (cue, album / cue.name, "CUE")]
+            else:
+                relative = sanitize(evaluate(template, tags))
+                if not relative:
+                    print(f"SKIP (empty format): {path}")
+                    incomplete = True
                     continue
-                audio_target = target_dir / path.name
-                cue_target = target_dir / cue.name
-                print(f"{'Would copy' if dry_run else 'Copy'} {rate_str}: {path} -> {audio_target}")
-                print(f"{'Would copy' if dry_run else 'Copy'} CUE: {cue} -> {cue_target}")
-                if not dry_run:
-                    if audio_target.exists() or cue_target.exists():
-                        print(f"WARNING: destination already exists, skipping: {audio_target if audio_target.exists() else cue_target}", file=sys.stderr)
-                        dir_handled_audio += 1
-                        continue
-                    target_dir.mkdir(parents=True, exist_ok=True)
-                    if move:
-                        shutil.move(str(path), str(audio_target))
-                        shutil.move(str(cue), str(cue_target))
-                    else:
-                        shutil.copy2(path, audio_target)
-                        shutil.copy2(cue, cue_target)
-                target_dirs_for_extras.add(target_dir)
-                copied += 1
-                dir_handled_audio += 1
-                continue
+                target = destination / relative
+                # Path.suffix treats the final words after a dot as an extension too:
+                # "0201-Intro Vol. 2" has suffix ". 2". Always append the audio suffix.
+                if not target.name.casefold().endswith(path.suffix.casefold()):
+                    target = target.with_name(target.name + path.suffix)
+                album, pairs = target.parent, [(path, target, rate_str)]
 
-            relative = evaluate(template, tags).strip(" /\\")
-            if not relative:
-                print(f"SKIP (empty format): {path}")
-                dir_incomplete = True
+            if from_tags and album_exists(album):
+                if not move or (root and album.resolve().is_relative_to(root)):
+                    incomplete = True
                 continue
-            relative = "/".join(INVALID.sub("_", part).rstrip(" .") for part in relative.replace("\\", "/").split("/"))
-            target = destination / relative
-            # Path.suffix treats the final words after a dot as an extension too:
-            # "0201-Intro Vol. 2" has suffix ". 2". Always append the audio suffix.
-            if not target.name.casefold().endswith(path.suffix.casefold()):
-                target = target.with_name(target.name + path.suffix)
-            if skip_existing_album(target.parent):
-                if move and not target_overlaps_source(target.parent):
-                    dir_handled_audio += 1
-                else:
-                    dir_incomplete = True
-                continue
-            if target.resolve() == path.resolve():
+            if pairs[0][1].resolve() == path.resolve():
                 print(f"SKIP (same path): {path}")
-                dir_incomplete = True
+                incomplete = True
                 continue
-            action = "move" if move else "copy"
-            print(f"{'Would ' + action if dry_run else action.capitalize()} {rate_str}: {path} -> {target}")
+            count += all(place(src, dst, dry_run, move, label) for src, dst, label in pairs)
+            target_dirs.add(album.resolve())
+
+        if not incomplete:
+            for target_dir in sorted(target_dirs):
+                copy_extras(dir_files[0], source, target_dir, extras, dry_run, placed_extras, move)
+            done_dirs.add(src_dir)
+
+    return count, done_dirs, skipped_dirs
+
+
+def cleanup_sources(source: Path, processed: set[Path], skipped: set[Path], dry_run: bool, prune_parents: bool = False) -> None:
+    """Delete fully processed source folders, plus (optionally) ancestors left with nothing unprocessed."""
+    if not processed:
+        return
+    root = source.resolve()
+    doomed, pending = set(processed), set(processed)
+    while prune_parents and pending:
+        parent = pending.pop().parent
+        if root in parent.parents and parent not in doomed and parent.is_dir() \
+                and all(sub.resolve() in doomed for sub in parent.iterdir() if sub.is_dir()):
+            doomed.add(parent)
+            pending.add(parent)
+    for directory in sorted(doomed):
+        if directory.parent in doomed or not directory.is_dir():
+            continue  # an ancestor takes this one along
+        print(f"{'Would delete' if dry_run else 'Deleted'} {'source' if directory in processed else 'parent'} directory: {directory}")
+        if not dry_run:
+            try:
+                shutil.rmtree(directory)
+            except OSError as exc:
+                print(f"WARNING: Could not delete directory {directory}: {exc}", file=sys.stderr)
+
+    # The source itself goes only if some folders were skipped and everything else is gone.
+    if source.is_dir() and skipped:
+        subdirs = {sub.resolve() for sub in source.iterdir() if sub.is_dir()}
+        if subdirs and subdirs <= processed | skipped and not any(source.iterdir()):
+            print(f"{'Would delete' if dry_run else 'Deleted'} empty parent directory: {source}")
             if not dry_run:
-                target.parent.mkdir(parents=True, exist_ok=True)
-                if target.exists():
-                    print(f"WARNING: destination already exists, skipping: {target}", file=sys.stderr)
-                    target_dirs_for_extras.add(target.parent)
-                    dir_handled_audio += 1
-                    continue
-                if move:
-                    shutil.move(str(path), str(target))
-                else:
-                    shutil.copy2(path, target)
-            target_dirs_for_extras.add(target.parent)
-            copied += 1
-            dir_handled_audio += 1
-
-        # Move extras after all audio files in directory have been processed
-        if not dir_incomplete and dir_files:
-            first_file = dir_files[0]
-            for target_dir in sorted(target_dirs_for_extras):
-                copy_extras(first_file, source, target_dir, extras or [], dry_run, copied_extras, move, warned_dirs)
-
-        # Mark directory as fully processed if all files were handled successfully
-        if dir_handled_audio == len(dir_files) and not dir_incomplete:
-            fully_processed_source_dirs.add(src_dir)
-        else:
-            incomplete_move = True
-
-    # Directory deletion is handled by main() function to ensure proper per-directory handling
-
-    return copied, fully_processed_source_dirs, skipped_source_dirs
+                try:
+                    source.rmdir()
+                except OSError as exc:
+                    print(f"NOTE: Parent directory not empty or could not be deleted: {source} ({exc})", file=sys.stderr)
 
 
 def path_regex(template: str) -> tuple[re.Pattern[str], list[str]]:
@@ -686,319 +488,72 @@ def write_tags(path: Path, inferred: dict[str, str], dry_run: bool) -> None:
     audio.save()
 
 
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--config", type=Path, default=Path(__file__).with_name("foobar_title_tools.json"))
+    sub = parser.add_subparsers(dest="command", required=True)
+    for name, help_text in (("copy", "copy or move supported audio files into title-formatted folders"),
+                            ("tag", "copy or move by file tags, or infer tags from paths")):
+        command = sub.add_parser(name, help=help_text)
+        command.add_argument("source", type=Path, nargs="?", help="audio file or directory (optional, uses config default if omitted)")
+        command.add_argument("destination", type=Path, nargs="?", help="destination folder (optional, uses config default if omitted)")
+        command.add_argument("lossy_destination", type=Path, nargs="?", help="optional folder for lossy formats (MP3)")
+        command.add_argument("--format", dest="template")
+        command.add_argument("--dry-run", action="store_true")
+        if name == "tag":
+            command.add_argument("--write", action="store_true")
+        mode = command.add_mutually_exclusive_group()
+        mode.add_argument("--move", dest="explicit_move", action="store_true", help="move files and remove the source folder after a complete move (default)")
+        mode.add_argument("--copy", action="store_true", help="copy files instead of moving them")
+    return parser
+
+
 def main() -> int:
     for stream in (sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)
         if reconfigure:
             reconfigure(errors="backslashreplace")
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", type=Path, default=Path(__file__).with_name("foobar_title_tools.json"))
-    sub = parser.add_subparsers(dest="command", required=True)
-    cp = sub.add_parser("copy", help="copy or move supported audio files into title-formatted folders")
-    cp.add_argument("source", type=Path, nargs="?");
-    cp.add_argument("destination", type=Path, nargs="?")
-    cp.add_argument("lossy_destination", type=Path, nargs="?", help="optional folder for lossy formats (MP3)")
-    cp.add_argument("--format", dest="template"); cp.add_argument("--dry-run", action="store_true")
-    cp_mode = cp.add_mutually_exclusive_group()
-    cp_mode.add_argument("--move", dest="explicit_move", action="store_true", help="move files and remove the source folder after a complete move (default)")
-    cp_mode.add_argument("--copy", action="store_true", help="copy files instead of moving them")
-    tag = sub.add_parser("tag", help="copy or move by file tags, or infer tags from paths")
-    tag.add_argument("source", type=Path, nargs="?", help="audio file or directory (optional, uses config default if omitted)")
-    tag.add_argument("destination", type=Path, nargs="?", help="copy files into folders formatted from their tags (optional)")
-    tag.add_argument("lossy_destination", type=Path, nargs="?", help="optional folder for lossy formats (MP3)")
-    tag.add_argument("--format", dest="template"); tag.add_argument("--write", action="store_true")
-    tag.add_argument("--dry-run", action="store_true")
-    tag_mode = tag.add_mutually_exclusive_group()
-    tag_mode.add_argument("--move", dest="explicit_move", action="store_true", help="move files and remove the source folder after a complete move (default)")
-    tag_mode.add_argument("--copy", action="store_true", help="copy files instead of moving them")
+    parser = build_parser()
     args = parser.parse_args()
-    args.move = not args.copy
+    move = not args.copy
     if args.command == "tag" and args.explicit_move and args.destination is None:
         parser.error("tag --move requires a destination")
     try:
         config = load_config(args.config)
-        extras = extra_patterns(config.get("extra", "*.jpg"))
-        action = "move" if not args.copy else "copy"
 
-        if args.command == "copy":
-            source_folder = config.get("source_folder", "")
-            dest_folder = config.get("destination_folder", "")
-            source = args.source or (Path(source_folder) if source_folder else None)
-            destination = args.destination or (Path(dest_folder) if dest_folder else None)
-            if not source or not destination or not source.exists():
-                parser.error("source and destination are required and must exist (or set in config: source_folder, destination_folder)")
+        def folder(arg: Path | None, key: str) -> Path | None:
+            return arg or (Path(config[key]) if config.get(key) else None)
 
-            audio_exts = [e.casefold() for e in config["audio_extensions"]]
-            count, fully_processed, skipped = copy_files_from_paths(source, destination, args.template or config["path_format"], config["copy_format"], args.dry_run, audio_exts, extras, not args.copy)
-            print(f"{'Would ' + action if args.dry_run else action.capitalize() + 'd'} {count} audio file(s).")
-            if skipped:
-                skipped_list = ", ".join(str(d) for d in sorted(skipped))
-                print(f"Skipped directories (high sample rate): {skipped_list}")
+        source, destination = folder(args.source, "source_folder"), folder(args.destination, "destination_folder")
+        if not source or not destination:
+            parser.error("source and destination are required (or set in config: source_folder, destination_folder)")
+        if not source.exists():
+            parser.error(f"source does not exist: {source}")
 
-            # Delete fully processed source directories
-            if not args.copy and fully_processed:
-                for dir_path in sorted(fully_processed):
-                    if dir_path.exists() and dir_path.is_dir():
-                        print(f"{'Would delete' if args.dry_run else 'Deleted'} source directory: {dir_path}")
-                        if not args.dry_run:
-                            try:
-                                shutil.rmtree(str(dir_path))
-                            except Exception as e:
-                                print(f"WARNING: Could not delete directory {dir_path}: {e}", file=sys.stderr)
+        extensions = [e.casefold() for e in config["audio_extensions"]]
+        if args.command == "copy":  # infer tags from the folder names
+            template, path_template = config["copy_format"], args.template or config["path_format"]
+        else:  # read tags from the files
+            template, path_template = args.template or config["copy_format"], None
+        lossy = folder(args.lossy_destination, "lossy_folder") if args.command == "tag" else None
+        jobs = [(destination, extensions)]
+        if lossy:
+            jobs = [(lossy, [e for e in extensions if e == ".mp3"]), (destination, [e for e in extensions if e != ".mp3"])]
 
-                # Try to delete parent if all subdirectories are processed/skipped
-                if source.is_dir() and skipped:  # only if some dirs were skipped
-                    all_subdirs = {p.resolve() for p in source.iterdir() if p.is_dir()}
-                    processed_or_skipped = fully_processed | skipped
-                    if all_subdirs and all_subdirs <= processed_or_skipped:  # all subdirs are accounted for
-                        try:
-                            remaining = list(source.iterdir())
-                            if not remaining:  # truly empty
-                                print(f"{'Would delete' if args.dry_run else 'Deleted'} empty parent directory: {source}")
-                                if not args.dry_run:
-                                    source.rmdir()
-                        except Exception as e:
-                            if args.dry_run:
-                                print(f"NOTE: Parent directory would not be deleted (not empty): {source}")
-                            else:
-                                print(f"NOTE: Parent directory not empty or could not be deleted: {source}", file=sys.stderr)
-        elif args.command == "tag":
-            # Tag command: read tags FROM AUDIO FILES and organize them
-            source_folder = config.get("source_folder", "")
-            dest_folder = config.get("destination_folder", "")
-            lossy_folder = config.get("lossy_folder", "")
+        counts, processed, skipped = [], set(), set()
+        for job_destination, job_extensions in jobs:
+            count, done_dirs, skipped_dirs = transfer_files(source, job_destination, template, args.dry_run, job_extensions,
+                                                            extra_patterns(config.get("extra", "*.jpg")), move, path_template)
+            counts.append(count)
+            processed |= done_dirs
+            skipped |= skipped_dirs
 
-            source = args.source or (Path(source_folder) if source_folder else None)
-            destination = args.destination or (Path(dest_folder) if dest_folder else None)
-            lossy_destination = args.lossy_destination or (Path(lossy_folder) if lossy_folder else None)
-
-            if not source or not destination:
-                parser.error("source and destination are required (or set in config: source_folder, destination_folder)")
-
-            if not source.exists():
-                parser.error(f"source does not exist: {source}")
-
-            # Sample rate check is now done per-directory in copy_files
-            audio_exts = [e.casefold() for e in config["audio_extensions"]]
-            files = audio_files(source, audio_exts)
-
-            # Separate MP3s to lossy folder if specified
-            if lossy_destination and lossy_destination.as_posix().strip():
-                lossless_exts = [e for e in audio_exts if e != ".mp3"]
-                mp3_files = [p for p in files if p.suffix.casefold() == ".mp3"]
-                lossless_files = [p for p in files if p.suffix.casefold() in lossless_exts]
-
-                # Track MP3 directories for deletion and extras
-                mp3_dirs_to_files: dict[Path, list[Path]] = {}
-                mp3_fully_processed: set[Path] = set()
-                mp3_skipped_existing: set[Path] = set()  # Track skipped due to existing destination
-                copied_extras: set[Path] = set()
-                warned_dirs: set[Path] = set()
-
-                if mp3_files:
-                    print(f"Moving {len(mp3_files)} MP3 file(s) to lossy library: {lossy_destination}")
-
-                    # Group MP3s by source directory
-                    for mp3 in mp3_files:
-                        dir_key = mp3.parent.resolve()
-                        if dir_key not in mp3_dirs_to_files:
-                            mp3_dirs_to_files[dir_key] = []
-                        mp3_dirs_to_files[dir_key].append(mp3)
-
-                    # Process each MP3 directory
-                    mp3_target_dirs: dict[Path, set[Path]] = {}
-                    warned_destinations: set[Path] = set()  # Track warned destinations to avoid duplicates
-                    for src_dir in sorted(mp3_dirs_to_files.keys()):
-                        dir_mp3_files = mp3_dirs_to_files[src_dir]
-                        dir_success = True
-
-                        # Check if destination for this directory already exists (based on first file's tags)
-                        first_mp3 = dir_mp3_files[0]
-                        first_tags = tags_for(first_mp3)
-                        first_target_path = evaluate(config["copy_format"], first_tags).strip(" /\\")
-                        if first_target_path:
-                            first_target_path = "/".join(INVALID.sub("_", part).rstrip(" .") for part in first_target_path.replace("\\", "/").split("/"))
-                            first_target_dir = (lossy_destination / first_target_path).parent  # Get the album folder
-                            if first_target_dir.exists() and first_target_dir.is_dir():
-                                # Only warn once per destination
-                                if first_target_dir.resolve() not in warned_destinations:
-                                    print(f"WARNING: destination album already exists, skipping: {first_target_dir}", file=sys.stderr)
-                                    warned_destinations.add(first_target_dir.resolve())
-                                # Track as skipped due to existing destination
-                                mp3_skipped_existing.add(src_dir)
-                                continue
-                        mp3_target_dirs[src_dir] = set()
-
-                        for mp3 in sorted(dir_mp3_files):
-                            tags = tags_for(mp3)
-                            sample_rate = sample_rate_for(mp3)
-                            rate_str = format_sample_rate(sample_rate)
-                            relative = evaluate(args.template or config["copy_format"], tags).strip(" /\\")
-                            if not relative:
-                                print(f"SKIP (empty format): {mp3}")
-                                dir_success = False
-                                continue
-                            relative = "/".join(INVALID.sub("_", part).rstrip(" .") for part in relative.replace("\\", "/").split("/"))
-                            target = lossy_destination / relative
-                            if not target.name.casefold().endswith(mp3.suffix.casefold()):
-                                target = target.with_name(target.name + mp3.suffix)
-                            action_type = "copy" if args.copy else "move"
-                            print(f"{'Would ' + action_type if args.dry_run else action_type.capitalize()} {rate_str}: {mp3} -> {target}")
-                            if not args.dry_run:
-                                target.parent.mkdir(parents=True, exist_ok=True)
-                                if target.exists():
-                                    print(f"WARNING: destination already exists, skipping: {target}", file=sys.stderr)
-                                    mp3_target_dirs[src_dir].add(target.parent)
-                                    continue
-                                if not args.copy:
-                                    shutil.move(str(mp3), str(target))
-                                else:
-                                    shutil.copy2(mp3, target)
-                            mp3_target_dirs[src_dir].add(target.parent)
-
-                        # Move extras for this MP3 directory after all files are processed
-                        if dir_success and dir_mp3_files:
-                            first_file = dir_mp3_files[0]
-                            for target_dir in sorted(mp3_target_dirs[src_dir]):
-                                copy_extras(first_file, source, target_dir, extras or [], args.dry_run, copied_extras, not args.copy, warned_dirs)
-                            mp3_fully_processed.add(src_dir)
-
-                # Count MP3s that were actually processed (not skipped)
-                mp3_count_moved = sum(len(files) for src_dir, files in mp3_dirs_to_files.items() if src_dir in mp3_fully_processed)
-
-                # Only process lossless files if any exist
-                if lossless_files:
-                    count, fully_processed, skipped = copy_files(source, destination, args.template or config["copy_format"], args.dry_run, lossless_exts, extras, not args.copy)
-                    total_moved = mp3_count_moved + count
-                    print(f"{'Would ' + action if args.dry_run else action.capitalize() + 'd'} {total_moved} audio file(s) ({mp3_count_moved} MP3 + {count} lossless).")
-                    if skipped:
-                        skipped_list = ", ".join(str(d) for d in sorted(skipped))
-                        print(f"Skipped directories (high sample rate): {skipped_list}")
-                else:
-                    fully_processed = set()
-                    skipped = set()
-                    if mp3_count_moved:
-                        print(f"{'Would ' + action if args.dry_run else action.capitalize() + 'd'} {mp3_count_moved} audio file(s) ({mp3_count_moved} MP3).")
-                    else:
-                        print(f"No audio files to process.")
-
-                # Combine MP3 and lossless fully processed directories (also include skipped ones for deletion)
-                all_fully_processed = (mp3_fully_processed | fully_processed | mp3_skipped_existing)
-
-                # Delete fully processed source directories (both MP3 and lossless)
-                if not args.copy and all_fully_processed:
-                    # First, determine which parent directories will be deleted
-                    dirs_to_delete_later = set()
-                    for dir_path in all_fully_processed:
-                        parent = dir_path.parent.resolve()
-                        if parent != source.resolve() and parent != Path(parent.anchor).resolve():
-                            # Check if this parent will be deleted
-                            parent_subdirs = {p.resolve() for p in parent.iterdir() if p.is_dir()} if parent.exists() else set()
-                            if parent_subdirs and parent_subdirs <= all_fully_processed:
-                                dirs_to_delete_later.add(parent)
-
-                    # Only show deletion messages for directories whose parents won't be deleted
-                    for dir_path in sorted(all_fully_processed):
-                        if dir_path.exists() and dir_path.is_dir():
-                            # Only show if parent is not being deleted
-                            if dir_path.parent.resolve() not in dirs_to_delete_later:
-                                print(f"{'Would delete' if args.dry_run else 'Deleted'} source directory: {dir_path}")
-                                if not args.dry_run:
-                                    try:
-                                        shutil.rmtree(str(dir_path))
-                                    except Exception as e:
-                                        print(f"WARNING: Could not delete directory {dir_path}: {e}", file=sys.stderr)
-
-                    # Try to delete parent directories of deleted dirs (recursive)
-                    # In dry-run, we simulate checking if parents would be empty
-                    dirs_to_check = set(all_fully_processed)
-                    checked_parents = set()
-                    while dirs_to_check:
-                        new_dirs_to_check = set()
-                        for dir_path in dirs_to_check:
-                            parent = dir_path.parent.resolve()
-                            if parent in checked_parents or parent == source.resolve() or parent == Path(parent.anchor).resolve():
-                                continue
-                            checked_parents.add(parent)
-
-                            try:
-                                if parent.exists() and parent.is_dir():
-                                    if args.dry_run:
-                                        # In dry-run, check if all subdirs of parent are being deleted
-                                        parent_subdirs = {p.resolve() for p in parent.iterdir() if p.is_dir()}
-                                        if parent_subdirs and parent_subdirs <= all_fully_processed:
-                                            # All subdirs would be deleted, so parent would be empty (or contain only extras)
-                                            print(f"Would delete empty parent directory: {parent}")
-                                            new_dirs_to_check.add(parent)
-                                    else:
-                                        # Actually try to delete if not dry-run
-                                        try:
-                                            # Try to remove as empty directory first
-                                            if not any(parent.iterdir()):
-                                                parent.rmdir()
-                                                print(f"Deleted empty parent directory: {parent}")
-                                            else:
-                                                # Parent has remaining files (extras that already existed), try to remove them too
-                                                shutil.rmtree(str(parent))
-                                                print(f"Deleted parent directory: {parent}")
-                                            new_dirs_to_check.add(parent)
-                                        except Exception as inner_e:
-                                            pass  # Could not delete, leave it
-                            except Exception as e:
-                                if not args.dry_run:
-                                    pass  # Parent not empty or other error, that's fine
-                        dirs_to_check = new_dirs_to_check
-
-                    # Try to delete top-level parent if all subdirectories are processed/skipped
-                    if source.is_dir() and skipped:  # only if some dirs were skipped
-                        all_subdirs = {p.resolve() for p in source.iterdir() if p.is_dir()}
-                        processed_or_skipped = all_fully_processed | skipped
-                        if all_subdirs and all_subdirs <= processed_or_skipped:  # all subdirs are accounted for
-                            try:
-                                remaining = list(source.iterdir())
-                                if not remaining:  # truly empty
-                                    print(f"{'Would delete' if args.dry_run else 'Deleted'} empty parent directory: {source}")
-                                    if not args.dry_run:
-                                        source.rmdir()
-                            except Exception as e:
-                                if args.dry_run:
-                                    print(f"NOTE: Parent directory would not be deleted (not empty): {source}")
-                                else:
-                                    print(f"NOTE: Parent directory not empty or could not be deleted: {source}", file=sys.stderr)
-            else:
-                count, fully_processed, skipped = copy_files(source, destination, args.template or config["copy_format"], args.dry_run, audio_exts, extras, not args.copy)
-                print(f"{'Would ' + action if args.dry_run else action.capitalize() + 'd'} {count} audio file(s).")
-                if skipped:
-                    skipped_list = ", ".join(str(d) for d in sorted(skipped))
-                    print(f"Skipped directories (high sample rate): {skipped_list}")
-
-                # Delete fully processed source directories
-                if not args.copy and fully_processed:
-                    for dir_path in sorted(fully_processed):
-                        if dir_path.exists() and dir_path.is_dir():
-                            print(f"{'Would delete' if args.dry_run else 'Deleted'} source directory: {dir_path}")
-                            if not args.dry_run:
-                                try:
-                                    shutil.rmtree(str(dir_path))
-                                except Exception as e:
-                                    print(f"WARNING: Could not delete directory {dir_path}: {e}", file=sys.stderr)
-
-                    # Try to delete parent if all subdirectories are processed/skipped
-                    if source.is_dir() and skipped:  # only if some dirs were skipped
-                        all_subdirs = {p.resolve() for p in source.iterdir() if p.is_dir()}
-                        processed_or_skipped = fully_processed | skipped
-                        if all_subdirs and all_subdirs <= processed_or_skipped:  # all subdirs are accounted for
-                            try:
-                                remaining = list(source.iterdir())
-                                if not remaining:  # truly empty
-                                    print(f"{'Would delete' if args.dry_run else 'Deleted'} empty parent directory: {source}")
-                                    if not args.dry_run:
-                                        source.rmdir()
-                            except Exception as e:
-                                if args.dry_run:
-                                    print(f"NOTE: Parent directory would not be deleted (not empty): {source}")
-                                else:
-                                    print(f"NOTE: Parent directory not empty or could not be deleted: {source}", file=sys.stderr)
+        breakdown = f" ({counts[0]} MP3 + {counts[1]} lossless)" if lossy else ""
+        print(f"{verb(args.dry_run, move, True)} {sum(counts)} audio file(s){breakdown}.")
+        if skipped:
+            print(f"Skipped directories (high sample rate): {', '.join(str(d) for d in sorted(skipped))}")
+        if move:
+            cleanup_sources(source, processed, skipped, args.dry_run, prune_parents=bool(lossy))
         return 0
     except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr); return 1
