@@ -11,6 +11,7 @@ import sqlite3
 import sys
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -146,6 +147,25 @@ def read_tracks_from_db(db_path: Path) -> list[TrackItem]:
             )
         )
     return tracks
+
+
+def check_daily_limit(state: dict[str, Any]) -> tuple[bool, str]:
+    """Check if a mass upload already happened today."""
+    last_uploaded_at = state.get("last_uploaded_at", "")
+    if not last_uploaded_at:
+        return True, "No prior uploads recorded"
+
+    try:
+        last_time = datetime.strptime(last_uploaded_at, "%Y-%m-%d %H:%M:%S")
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        last_date = last_time.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        if last_date >= today:
+            hours_ago = (datetime.now() - last_time).total_seconds() / 3600
+            return False, f"Already uploaded today ({hours_ago:.1f} hours ago). Use --force to override."
+        return True, f"Last upload was {(today - last_date).days} days ago"
+    except ValueError:
+        return True, "Could not parse last upload time"
 
 
 def load_state(state_path: Path) -> dict[str, Any]:
@@ -549,6 +569,11 @@ def main() -> int:
         action="store_true",
         help="Print detailed batch progress",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force upload even if already uploaded today",
+    )
     args = parser.parse_args()
 
     try:
@@ -569,6 +594,15 @@ def main() -> int:
             args.log
             or Path(str(scrobbler_section.get("log_file", DEFAULT_LOG_PATH)))
         )
+
+        state = load_state(state_path)
+        if not args.force and not args.dry_run:
+            can_upload, reason = check_daily_limit(state)
+            if not can_upload:
+                print(safe_console_text(f"Daily upload limit: {reason}"), file=sys.stderr)
+                return 1
+            elif reason:
+                print(safe_console_text(f"OK to upload: {reason}"))
 
         uploaded, last_no, last_title = scrobble_database(
             db_path=db_path,

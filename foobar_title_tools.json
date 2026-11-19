@@ -12,5 +12,8 @@
     ".ogg",
     ".opus"
   ],
-  "extra": "*.jpg"
+  "extra": "*.jpg",
+  "source_folder": "m:\\_X_\\_X_X_X_",
+  "destination_folder": "m:\\",
+  "lossy_folder": "r:\\"
 }
